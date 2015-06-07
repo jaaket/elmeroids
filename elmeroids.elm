@@ -14,18 +14,28 @@ type alias Object a = { a | pos:Vec2, velocity:Vec2, acceleration:Vec2,
 type alias Input = { up:Bool, down:Bool, left:Bool, right:Bool }
 
 type alias Ship = Object {}
+type alias Asteroid = Object {}
+type alias Game = { ship:Ship, asteroids:List Asteroid }
 
 speed = 0.001
 angularSpeed = 0.005
 
 initShip : Ship
 initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
-             angle=0, angularVelocity=1 }
+             angle=0, angularVelocity=0 }
+
+initAsteroids : List Asteroid
+initAsteroids = [ { pos=(100, 100), velocity=(0.1,0.2), acceleration=(0,0),
+                    angle=0, angularVelocity=0.01 } ]
+
+initGame = { ship=initShip, asteroids=initAsteroids }
 
 triangle : Form
 triangle = outlined (solid Color.black)
                     (polygon [(20, 0), (-10, -10), (-10, 10)])
 
+asteroid : Form
+asteroid = outlined (solid Color.black) (ngon 5 20)
 
 sum : Vec2 -> Vec2 -> Vec2
 sum (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
@@ -62,14 +72,23 @@ wrapAround (w, h) obj =
                           | otherwise            -> y))
       }
 
-updateShip : ((Int, Int), Time, Input) -> Ship -> Ship
-updateShip (windowSize, dt, input) = maneuver input >> simulate dt
-                                                    >> wrapAround windowSize
+updateShip : (Int, Int) -> Time -> Input -> Ship -> Ship
+updateShip windowSize dt input = maneuver input >> simulate dt
+                                                >> wrapAround windowSize
 
-updateGame : Signal Ship
-updateGame = foldp updateShip
-                   initShip
-                   (map3 (,,) Window.dimensions (fps 60) keyInput)
+updateAsteroid : (Int, Int) -> Time -> Asteroid -> Asteroid
+updateAsteroid windowSize dt = simulate dt >> wrapAround windowSize
+
+updateGame : ((Int, Int), Time, Input) -> Game -> Game
+updateGame (windowSize, dt, input) game =
+  { game | ship <- updateShip windowSize dt input game.ship,
+           asteroids <- List.map (updateAsteroid windowSize dt) game.asteroids
+  }
+
+gameState : Signal Game
+gameState = foldp updateGame
+                  initGame
+                  (map3 (,,) Window.dimensions (fps 60) keyInput)
 
 keyInput : Signal Input
 keyInput = map (\keys -> { up = keys.y == 1,
@@ -78,9 +97,12 @@ keyInput = map (\keys -> { up = keys.y == 1,
                            right = keys.x == 1 })
                Keyboard.arrows
 
+render : (Int, Int) -> Game -> Element
+render windowSize game =
+  let ship = move game.ship.pos (rotate game.ship.angle triangle)
+      asteroids = List.map (\ast -> move ast.pos (rotate ast.angle asteroid)) game.asteroids
+  in  uncurry collage windowSize ([ ship ] ++ asteroids)
+
 main : Signal Element
-main =
-  map2 (\windowSize ship ->
-    (uncurry collage windowSize [ move ship.pos (rotate ship.angle triangle) ]))
-    Window.dimensions updateGame
+main = map2 render Window.dimensions gameState
 
