@@ -9,14 +9,18 @@ import Time exposing (..)
 import Signal exposing (..)
 
 type alias Vec2 = (Float, Float)
-type alias Ship = { pos:Vec2, angle:Float, speed:Vec2, acceleration:Vec2 }
+type alias Object a = { a | pos:Vec2, velocity:Vec2, acceleration:Vec2,
+                        angle:Float, angularVelocity: Float }
 type alias Input = { up:Bool, down:Bool, left:Bool, right:Bool }
 
-speed = 0.1
-angularSpeed = 0.01
+type alias Ship = Object {}
+
+speed = 0.001
+angularSpeed = 0.005
 
 initShip : Ship
-initShip = { pos=(0,0), angle=0, speed=(0,0), acceleration=(0,0) }
+initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
+             angle=0, angularVelocity=1 }
 
 triangle : Form
 triangle = outlined (solid Color.black)
@@ -29,37 +33,43 @@ sum (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
 integrate : Float -> Vec2 -> Vec2
 integrate dt x = (fst x * dt, snd x * dt)
 
-updateAcceleration : Input -> Float -> Vec2
-updateAcceleration input angle =
-  if | input.up  -> (0.001 * cos angle, 0.001 * sin angle)
-     | otherwise -> (0, 0)
+maneuver : Input -> Ship -> Ship
+maneuver input ship =
+  { ship | angularVelocity <- if | input.left  -> angularSpeed
+                                 | input.right -> -angularSpeed
+                                 | otherwise   -> 0,
+           acceleration    <- if | input.up -> (speed * (cos ship.angle),
+                                                speed * (sin ship.angle))
+                                 | otherwise   -> (0, 0)
+  }
 
-updateSpeed : Float -> Ship -> Vec2
-updateSpeed dt ship =
-  sum ship.speed (integrate dt ship.acceleration)
+simulate : Float -> Object a -> Object a
+simulate dt obj =
+  { obj | pos      <- sum obj.pos (integrate dt obj.velocity),
+          velocity <- sum obj.velocity (integrate dt obj.acceleration),
+          angle    <- obj.angle + dt * obj.angularVelocity
+  }
 
-updateAngle : Input -> Float -> Float
-updateAngle input angle =
-  if | input.left  -> angle + 0.1
-     | input.right -> angle - 0.1
-     | otherwise   -> angle
-
-wrapAround : (Int, Int) -> Vec2 -> Vec2
-wrapAround (w, h) (x, y) = (if | x < -(toFloat w) / 2 -> x + toFloat w
-                               | x > toFloat w / 2    -> x - toFloat w
-                               | otherwise            -> x,
-                            if | y < -(toFloat h) / 2 -> y + toFloat h
-                               | y > toFloat h / 2    -> y - toFloat h
-                               | otherwise            -> y)
+wrapAround : (Int, Int) -> Object a -> Object a
+wrapAround (w, h) obj =
+  let x = fst obj.pos
+      y = snd obj.pos
+  in  { obj | pos <- ((if | x < -(toFloat w) / 2 -> x + toFloat w
+                          | x > toFloat w / 2    -> x - toFloat w
+                          | otherwise            -> x,
+                       if | y < -(toFloat h) / 2 -> y + toFloat h
+                          | y > toFloat h / 2    -> y - toFloat h
+                          | otherwise            -> y))
+      }
 
 updateShip : (Time, Input) -> Ship -> Ship
-updateShip (dt, input) ship =
-  { ship | pos <- sum ship.pos (integrate dt ship.speed)
-                        |> wrapAround (600, 600),
-           speed <- updateSpeed dt ship,
-           acceleration <- updateAcceleration input ship.angle,
-           angle <- updateAngle input ship.angle
-  }
+updateShip (dt, input) = maneuver input >> simulate dt
+                                        >> wrapAround (600, 600)
+
+updateGame : Signal Ship
+updateGame = foldp updateShip
+                   initShip
+                   (map2 (,) (fps 60) keyInput)
 
 keyInput : Signal Input
 keyInput = map (\keys -> { up = keys.y == 1,
@@ -67,11 +77,6 @@ keyInput = map (\keys -> { up = keys.y == 1,
                            left = keys.x == -1,
                            right = keys.x == 1 })
                Keyboard.arrows
-
-updateGame : Signal Ship
-updateGame = foldp updateShip
-                   initShip
-                   (map2 (,) (fps 60) keyInput)
 
 main : Signal Element
 main =
