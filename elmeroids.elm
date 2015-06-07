@@ -44,9 +44,18 @@ updateAngle input angle =
      | input.right -> angle - 0.1
      | otherwise   -> angle
 
+wrapAround : (Int, Int) -> Vec2 -> Vec2
+wrapAround (w, h) (x, y) = (if | x < -(toFloat w) / 2 -> x + toFloat w
+                               | x > toFloat w / 2    -> x - toFloat w
+                               | otherwise            -> x,
+                            if | y < -(toFloat h) / 2 -> y + toFloat h
+                               | y > toFloat h / 2    -> y - toFloat h
+                               | otherwise            -> y)
+
 updateShip : (Time, Input) -> Ship -> Ship
 updateShip (dt, input) ship =
-  { ship | pos <- sum ship.pos (integrate dt ship.speed),
+  { ship | pos <- sum ship.pos (integrate dt ship.speed)
+                        |> wrapAround (600, 600),
            speed <- updateSpeed dt ship,
            acceleration <- updateAcceleration input ship.angle,
            angle <- updateAngle input ship.angle
