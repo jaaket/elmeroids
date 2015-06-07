@@ -62,14 +62,14 @@ wrapAround (w, h) obj =
                           | otherwise            -> y))
       }
 
-updateShip : (Time, Input) -> Ship -> Ship
-updateShip (dt, input) = maneuver input >> simulate dt
-                                        >> wrapAround (600, 600)
+updateShip : ((Int, Int), Time, Input) -> Ship -> Ship
+updateShip (windowSize, dt, input) = maneuver input >> simulate dt
+                                                    >> wrapAround windowSize
 
 updateGame : Signal Ship
 updateGame = foldp updateShip
                    initShip
-                   (map2 (,) (fps 60) keyInput)
+                   (map3 (,,) Window.dimensions (fps 60) keyInput)
 
 keyInput : Signal Input
 keyInput = map (\keys -> { up = keys.y == 1,
@@ -80,5 +80,7 @@ keyInput = map (\keys -> { up = keys.y == 1,
 
 main : Signal Element
 main =
-  map (\ship -> (collage 600 600 [ move ship.pos (rotate ship.angle triangle) ])) updateGame
+  map2 (\windowSize ship ->
+    (uncurry collage windowSize [ move ship.pos (rotate ship.angle triangle) ]))
+    Window.dimensions updateGame
 
