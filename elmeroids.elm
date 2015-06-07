@@ -19,7 +19,8 @@ initShip : Ship
 initShip = { pos=(0,0), angle=0, speed=(0,0), acceleration=(0,0) }
 
 triangle : Form
-triangle = outlined (solid Color.black) (ngon 3 20)
+triangle = outlined (solid Color.black)
+                    (polygon [(20, 0), (-10, -10), (-10, 10)])
 
 
 sum : Vec2 -> Vec2 -> Vec2
