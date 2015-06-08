@@ -10,10 +10,10 @@ import Signal exposing (..)
 import Random exposing (..)
 import Text exposing (fromString)
 
-type alias Vec2 = (Float, Float)
-type alias Object a = { a | pos:Vec2, velocity:Vec2, acceleration:Vec2,
-                            angle:Float, angularVelocity: Float,
-                            collisionRadius:Float }
+import Types exposing (Vec2, sum)
+import Physics exposing (Object, simulate, collides)
+import Utils exposing (iterate)
+
 type alias Input = { up:Bool, down:Bool, left:Bool, right:Bool }
 
 type GameState = Active | Over
@@ -32,10 +32,6 @@ angularSpeed = 0.005
 initShip : Ship
 initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
              angle=0, angularVelocity=0, collisionRadius=10 }
-
-iterate : Int -> (a -> a) -> a -> a
-iterate n f x = if | n > 0     -> f (iterate (n - 1) f x)
-                   | otherwise -> x
 
 initGame : Game
 initGame =
@@ -67,12 +63,6 @@ triangle = outlined (solid Color.black)
 asteroid : Form
 asteroid = outlined (solid Color.black) (ngon 5 20)
 
-sum : Vec2 -> Vec2 -> Vec2
-sum (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
-
-integrate : Float -> Vec2 -> Vec2
-integrate dt x = (fst x * dt, snd x * dt)
-
 maneuver : Input -> Ship -> Ship
 maneuver input ship =
   { ship | angularVelocity <- if | input.left  -> angularSpeed
@@ -81,13 +71,6 @@ maneuver input ship =
            acceleration    <- if | input.up -> (speed * (cos ship.angle),
                                                 speed * (sin ship.angle))
                                  | otherwise   -> (0, 0)
-  }
-
-simulate : Float -> Object a -> Object a
-simulate dt obj =
-  { obj | pos      <- sum obj.pos (integrate dt obj.velocity),
-          velocity <- sum obj.velocity (integrate dt obj.acceleration),
-          angle    <- obj.angle + dt * obj.angularVelocity
   }
 
 wrapAround : (Int, Int) -> Object a -> Object a
@@ -108,12 +91,6 @@ updateShip windowSize dt input = maneuver input >> simulate dt
 
 updateAsteroid : (Int, Int) -> Time -> Asteroid -> Asteroid
 updateAsteroid windowSize dt = simulate dt >> wrapAround windowSize
-
-dist : Vec2 -> Vec2 -> Float
-dist (x1, y1) (x2, y2) = sqrt ((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2))
-
-collides : Object a -> Object b -> Bool
-collides obj1 obj2 = dist obj1.pos obj2.pos < obj1.collisionRadius + obj2.collisionRadius
 
 updateGame : ((Int, Int), Time, Input) -> Game -> Game
 updateGame (windowSize, dt, input) game =
