@@ -102,16 +102,44 @@ updateAsteroid windowSize dt = simulate dt >> wrapAround windowSize
 updateBullet : (Int, Int) -> Time -> Bullet -> Bullet
 updateBullet windowSize dt = simulate dt >> wrapAround windowSize
 
+pieceGenerator : Asteroid -> Generator Asteroid
+pieceGenerator ast =
+  customGenerator <| \seed ->
+    let (velChange, seed') = generate (pair (float -0.1 0.1) (float -0.1 0.1))
+                                      seed
+        piece = { ast | velocity <- sum ast.velocity velChange,
+                        collisionRadius <- ast.collisionRadius * 0.7 }
+    in  (piece, seed')
+
+asteroidPieces : Asteroid -> List Asteroid
+asteroidPieces ast =
+  generate (list 3 (pieceGenerator ast))
+           (initialSeed (floor <| (fst ast.pos * 1000 + snd ast.pos) * ast.angle))
+    |> fst
+
+splitAsteroidIfLargerThan : Float -> Asteroid -> List Asteroid
+splitAsteroidIfLargerThan r ast =
+  if ast.collisionRadius > r
+     then asteroidPieces ast
+     else []
+
 updateWorld : ((Int, Int), Time, Input) -> Game -> Game
 updateWorld (windowSize, dt, input) game =
   let newBullets = if input.fire && game.shootCooldown < 0
                       then [shoot game.ship]
                       else []
+      (asteroidsDestroyed, asteroidsLeft) =
+        List.partition (\asteroid -> List.any (collides asteroid) game.bullets)
+                       game.asteroids
+      bulletsLeft = List.filter (\bullet -> not <| List.any (collides bullet) game.asteroids)
+                                game.bullets
   in  { game | ship          <- updateShip windowSize dt input game.ship,
-               asteroids     <- List.map (updateAsteroid windowSize dt)
-                                         game.asteroids,
+               asteroids     <- (List.map (updateAsteroid windowSize dt)
+                                          asteroidsLeft) ++
+                                (List.concatMap (splitAsteroidIfLargerThan 10)
+                                                asteroidsDestroyed),
                bullets       <- List.map (updateBullet windowSize dt)
-                                         (game.bullets ++ newBullets),
+                                         (bulletsLeft ++ newBullets),
                shootCooldown <- if input.fire && game.shootCooldown < 0
                                    then shootInterval
                                    else game.shootCooldown - dt,
@@ -143,8 +171,8 @@ triangle : Form
 triangle = outlined (solid Color.black)
                     (polygon [(20, 0), (-10, -10), (-10, 10)])
 
-asteroid : Form
-asteroid = outlined (solid Color.black) (ngon 5 20)
+asteroid : Asteroid -> Form
+asteroid ast = outlined (solid Color.black) (ngon 5 ast.collisionRadius)
 
 bullet : Form
 bullet = outlined (solid Color.black) (ngon 7 2)
@@ -152,10 +180,13 @@ bullet = outlined (solid Color.black) (ngon 7 2)
 renderObject : Form -> Object a -> Form
 renderObject form obj = move obj.pos (rotate obj.angle form)
 
+renderAsteroid : Asteroid -> Form
+renderAsteroid ast = renderObject (asteroid ast) ast
+
 render : (Int, Int) -> Game -> Element
 render (w, h) game =
   let ship = renderObject triangle game.ship
-      asteroids = List.map (renderObject asteroid) game.asteroids
+      asteroids = List.map renderAsteroid game.asteroids
       bullets = List.map (renderObject bullet) game.bullets
       world = collage w h <| ship :: asteroids ++ bullets
       overlay = fromString "Game over!"
