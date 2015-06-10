@@ -37,30 +37,32 @@ initShip : Ship
 initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
              angle=0, angularVelocity=0, collisionRadius=10 }
 
+asteroidGenerator : (Int, Int) -> Generator Asteroid
+asteroidGenerator (w, h) =
+  customGenerator <| \seed ->
+    let xmin = -(w |> toFloat) / 2
+        xmax =  (w |> toFloat) / 2
+        ymin = -(h |> toFloat) / 2
+        ymax =  (h |> toFloat) / 2
+        (pos, seed1) = generate (pair (float xmin xmax) (float ymin ymax)) seed
+        (vel, seed2) = generate (pair (float -0.2 0.2) (float -0.2 0.2)) seed1
+        (angle, seed3) = generate (float 0 360) seed2
+        (angularVel, seed4) = generate (float -0.01 0.01) seed3
+    in  ({ pos=pos, velocity=vel, acceleration=(0,0),
+           angle=angle, angularVelocity=angularVel,
+           collisionRadius=20 }, seed4)
+
 initGame : Game
 initGame =
-  iterate 10 addRandomAsteroid { ship=initShip,
-                                 asteroids=[],
-                                 bullets=[],
-                                 windowSize=(1000, 1000),
-                                 seed=initialSeed 0,
-                                 state=Active,
-                                 shootCooldown = shootInterval }
-
-addRandomAsteroid : Game -> Game
-addRandomAsteroid game =
-  let xmin = -(fst game.windowSize |> toFloat) / 2
-      xmax =  (fst game.windowSize |> toFloat) / 2
-      ymin = -(snd game.windowSize |> toFloat) / 2
-      ymax =  (snd game.windowSize |> toFloat) / 2
-      (pos, seed) = generate (pair (float xmin xmax) (float ymin ymax)) game.seed
-      (vel, seed') = generate (pair (float -0.2 0.2) (float -0.2 0.2)) seed
-      (angle, seed'') = generate (float 0 360) seed'
-      (angularVel, seed''') = generate (float -0.01 0.01) seed''
-  in  { game | asteroids <- { pos=pos, velocity=vel, acceleration=(0,0),
-                              angle=angle, angularVelocity=angularVel,
-                              collisionRadius=20 } :: game.asteroids,
-               seed <- seed''' }
+  let seed = initialSeed 0
+      windowSize = (1000, 1000)
+  in  { ship=initShip,
+        asteroids=generate (list 10 (asteroidGenerator windowSize)) seed |> fst,
+        bullets=[],
+        windowSize=windowSize,
+        seed=seed,
+        state=Active,
+        shootCooldown = shootInterval }
 
 maneuver : Input -> Ship -> Ship
 maneuver input ship =
