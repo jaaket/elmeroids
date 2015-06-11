@@ -16,6 +16,16 @@ import Utils exposing (iterate)
 
 type alias Input = { up:Bool, down:Bool, left:Bool, right:Bool, fire:Bool }
 
+type alias Rect = { left:Float, right:Float, bottom:Float, top:Float }
+
+windowBounds : (Int, Int) -> Rect
+windowBounds (w, h) =
+  { left   = -(toFloat w) / 2,
+    right  =  (toFloat w) / 2,
+    bottom = -(toFloat h) / 2,
+    top    =  (toFloat h) / 2
+  }
+
 type GameState = Active | Over
 
 type alias Ship = Object {}
@@ -24,7 +34,7 @@ type alias Bullet = Object {}
 type alias Game = { ship:Ship,
                     asteroids:List Asteroid,
                     bullets:List Bullet,
-                    windowSize:(Int, Int),
+                    bounds:Rect,
                     seed:Seed,
                     state:GameState,
                     shootCooldown:Float }
@@ -37,14 +47,11 @@ initShip : Ship
 initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
              angle=0, angularVelocity=0, collisionRadius=10 }
 
-asteroidGenerator : (Int, Int) -> Generator Asteroid
-asteroidGenerator (w, h) =
+asteroidGenerator : Rect -> Generator Asteroid
+asteroidGenerator bounds =
   customGenerator <| \seed ->
-    let xmin = -(w |> toFloat) / 2
-        xmax =  (w |> toFloat) / 2
-        ymin = -(h |> toFloat) / 2
-        ymax =  (h |> toFloat) / 2
-        (pos, seed1) = generate (pair (float xmin xmax) (float ymin ymax)) seed
+    let (pos, seed1) = generate (pair (float bounds.left bounds.right)
+                                      (float bounds.bottom bounds.top)) seed
         (vel, seed2) = generate (pair (float -0.2 0.2) (float -0.2 0.2)) seed1
         (angle, seed3) = generate (float 0 360) seed2
         (angularVel, seed4) = generate (float -0.01 0.01) seed3
@@ -55,11 +62,11 @@ asteroidGenerator (w, h) =
 initGame : Game
 initGame =
   let seed = initialSeed 0
-      windowSize = (1000, 1000)
+      bounds = { left = -500, right = 500, bottom = -500, top = 500 }
   in  { ship=initShip,
-        asteroids=generate (list 10 (asteroidGenerator windowSize)) seed |> fst,
+        asteroids=generate (list 10 (asteroidGenerator bounds)) seed |> fst,
         bullets=[],
-        windowSize=windowSize,
+        bounds=bounds,
         seed=seed,
         state=Active,
         shootCooldown = shootInterval }
@@ -82,27 +89,29 @@ shoot { pos, angle } = { pos=pos,
                          angularVelocity=0,
                          collisionRadius = 5 }
 
-wrapAround : (Int, Int) -> Object a -> Object a
-wrapAround (w, h) obj =
+wrapAround : Rect -> Object a -> Object a
+wrapAround { left, right, bottom, top } obj =
   let x = fst obj.pos
       y = snd obj.pos
-  in  { obj | pos <- ((if | x < -(toFloat w) / 2 -> x + toFloat w
-                          | x > toFloat w / 2    -> x - toFloat w
-                          | otherwise            -> x,
-                       if | y < -(toFloat h) / 2 -> y + toFloat h
-                          | y > toFloat h / 2    -> y - toFloat h
-                          | otherwise            -> y))
+      w = right - left
+      h = top - bottom
+  in  { obj | pos <- ((if | x < left  -> x + w
+                          | x > right -> x - w
+                          | otherwise -> x,
+                       if | y < bottom -> y + h
+                          | y > top    -> y - h
+                          | otherwise  -> y))
       }
 
-updateShip : (Int, Int) -> Time -> Input -> Ship -> Ship
-updateShip windowSize dt input = maneuver input >> simulate dt
-                                                >> wrapAround windowSize
+updateShip : Rect -> Time -> Input -> Ship -> Ship
+updateShip bounds dt input = maneuver input >> simulate dt
+                                            >> wrapAround bounds
 
-updateAsteroid : (Int, Int) -> Time -> Asteroid -> Asteroid
-updateAsteroid windowSize dt = simulate dt >> wrapAround windowSize
+updateAsteroid : Rect -> Time -> Asteroid -> Asteroid
+updateAsteroid bounds dt = simulate dt >> wrapAround bounds
 
-updateBullet : (Int, Int) -> Time -> Bullet -> Bullet
-updateBullet windowSize dt = simulate dt >> wrapAround windowSize
+updateBullet : Rect -> Time -> Bullet -> Bullet
+updateBullet bounds dt = simulate dt >> wrapAround bounds
 
 pieceGenerator : Asteroid -> Generator Asteroid
 pieceGenerator ast =
@@ -125,8 +134,8 @@ splitAsteroidIfLargerThan r ast =
      then asteroidPieces ast
      else []
 
-updateWorld : ((Int, Int), Time, Input) -> Game -> Game
-updateWorld (windowSize, dt, input) game =
+updateWorld : (Rect, Time, Input) -> Game -> Game
+updateWorld (bounds, dt, input) game =
   let newBullets = if input.fire && game.shootCooldown < 0
                       then [shoot game.ship]
                       else []
@@ -135,12 +144,12 @@ updateWorld (windowSize, dt, input) game =
                        game.asteroids
       bulletsLeft = List.filter (\bullet -> not <| List.any (collides bullet) game.asteroids)
                                 game.bullets
-  in  { game | ship          <- updateShip windowSize dt input game.ship,
-               asteroids     <- (List.map (updateAsteroid windowSize dt)
+  in  { game | ship          <- updateShip bounds dt input game.ship,
+               asteroids     <- (List.map (updateAsteroid bounds dt)
                                           asteroidsLeft) ++
                                 (List.concatMap (splitAsteroidIfLargerThan 10)
                                                 asteroidsDestroyed),
-               bullets       <- List.map (updateBullet windowSize dt)
+               bullets       <- List.map (updateBullet bounds dt)
                                          (bulletsLeft ++ newBullets),
                shootCooldown <- if input.fire && game.shootCooldown < 0
                                    then shootInterval
@@ -153,7 +162,7 @@ updateWorld (windowSize, dt, input) game =
 updateGame : ((Int, Int), Time, Input) -> Game -> Game
 updateGame (windowSize, dt, input) game =
   case game.state of
-    Active -> updateWorld (windowSize, dt, input) game
+    Active -> updateWorld (windowBounds windowSize, dt, input) game
     Over   -> game
 
 gameState : Signal Game
