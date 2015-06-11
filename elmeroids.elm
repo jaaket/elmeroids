@@ -30,7 +30,7 @@ type GameState = Active | Over
 
 type alias Ship = Object {}
 type alias Asteroid = Object {}
-type alias Bullet = Object {}
+type alias Bullet = Object { lifetimeLeft:Float }
 type alias Game = { ship:Ship,
                     asteroids:List Asteroid,
                     bullets:List Bullet,
@@ -41,7 +41,8 @@ type alias Game = { ship:Ship,
 
 speed = 0.001
 angularSpeed = 0.005
-shootInterval = 500
+shootInterval = 100
+bulletLifetime = 750
 
 initShip : Ship
 initShip = { pos=(0,0), velocity=(0,0), acceleration=(0,0),
@@ -87,7 +88,9 @@ shoot { pos, angle } = { pos=pos,
                          acceleration=(0,0),
                          angle=angle,
                          angularVelocity=0,
-                         collisionRadius = 5 }
+                         collisionRadius = 5,
+                         lifetimeLeft=bulletLifetime
+                       }
 
 wrapAround : Rect -> Object a -> Object a
 wrapAround { left, right, bottom, top } obj =
@@ -110,8 +113,15 @@ updateShip bounds dt input = maneuver input >> simulate dt
 updateAsteroid : Rect -> Time -> Asteroid -> Asteroid
 updateAsteroid bounds dt = simulate dt >> wrapAround bounds
 
+decreaseLifetime : Time -> Bullet -> Bullet
+decreaseLifetime dt bullet =
+  { bullet | lifetimeLeft <- bullet.lifetimeLeft - dt }
+
 updateBullet : Rect -> Time -> Bullet -> Bullet
-updateBullet bounds dt = simulate dt >> wrapAround bounds
+updateBullet bounds dt = simulate dt >> wrapAround bounds >> decreaseLifetime dt
+
+bulletAlive : Bullet -> Bool
+bulletAlive { lifetimeLeft } = lifetimeLeft > 0
 
 pieceGenerator : Asteroid -> Generator Asteroid
 pieceGenerator ast =
@@ -149,8 +159,9 @@ updateWorld (bounds, dt, input) game =
                                           asteroidsLeft) ++
                                 (List.concatMap (splitAsteroidIfLargerThan 10)
                                                 asteroidsDestroyed),
-               bullets       <- List.map (updateBullet bounds dt)
-                                         (bulletsLeft ++ newBullets),
+               bullets       <- List.filter bulletAlive
+                                            (List.map (updateBullet bounds dt)
+                                                      (bulletsLeft ++ newBullets)),
                shootCooldown <- if input.fire && game.shootCooldown < 0
                                    then shootInterval
                                    else game.shootCooldown - dt,
